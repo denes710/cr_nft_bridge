@@ -28,7 +28,7 @@ interface ISpokeBridge {
         uint256 tokenId;
         address erc721Contract;
         uint32 chainId;
-        uint256 timeOfBuying;
+        uint256 timeOfBuying; // FIXME better name
         address buyer;
     }
 

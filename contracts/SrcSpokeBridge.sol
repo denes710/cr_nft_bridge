@@ -49,6 +49,10 @@ contract SrcSpokeBridge is ISrcSpokeBridge, Ownable {
      */
     mapping(uint256 => Bid) public challengedOutgoingBids;
 
+    // TODO another for challenging
+    uint256 public immutable STAKE_AMOUNT;
+
+    uint256 public immutable TIME_LIMIT_OF_UNDEPOSIT;
 
     Counters.Counter public id;
 
@@ -59,6 +63,19 @@ contract SrcSpokeBridge is ISrcSpokeBridge, Ownable {
     constructor(address _contractMap, address _messageSender) {
         contractMap = _contractMap;
         messageSender = _messageSender;
+        STAKE_AMOUNT = 20 ether;
+        TIME_LIMIT_OF_UNDEPOSIT = 2 days;
+    }
+
+    modifier onlyActiveRelayer() {
+        require(RelayerStatus.Active == relayers[_msgSender()].status, "SrcSpokenBridge: caller is not a relayer!");
+        _;
+    }
+
+    modifier onlyUndepositedRelayer() {
+        require(RelayerStatus.Undeposited == relayers[_msgSender()].status,
+            "SrcSpokenBridge: caller is not in undeposited state!");
+        _;
     }
 
     function createBid() public override payable {
@@ -82,15 +99,26 @@ contract SrcSpokeBridge is ISrcSpokeBridge, Ownable {
     }
 
     function deposite() public override payable {
-        // TODO
+        require(RelayerStatus.None == relayers[_msgSender()].status, "SrcSpokenBridge: caller cannot be a relayer!");
+        require(msg.value == STAKE_AMOUNT);
+
+        relayers[_msgSender()].status = RelayerStatus.Active;
+        relayers[_msgSender()].stakedAmount = msg.value;
     }
 
-    function undeposite() public override {
-        // TODO
+    function undeposite() public override onlyActiveRelayer {
+        relayers[_msgSender()].status = RelayerStatus.Undeposited;
+        relayers[_msgSender()].dateOfUndeposited = block.timestamp;
     }
 
-    function claimDeposite() public override {
-        // TODO
+    function claimDeposite() public override onlyUndepositedRelayer {
+        require(block.timestamp > relayers[_msgSender()].dateOfUndeposited + TIME_LIMIT_OF_UNDEPOSIT,
+            "SrcSpokenBridge: 2 days is not expired from the undepositing!");
+
+        (bool isSent,) = _msgSender().call{value: STAKE_AMOUNT}("");
+        require(isSent, "Failed to send Ether");
+
+        relayers[_msgSender()].status = RelayerStatus.None;
     }
 
     function unlocking(uint256 _lockingBidId, uint256 _bidId, address _to, address erc721Contract) public override {
