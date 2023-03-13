@@ -23,17 +23,18 @@ contract ContractMap is IContractMap, Ownable {
     function addPair(address _local, address _remote) public override onlyOwner {
         require(localToRemote[_local] == address(0), "ContractMap: addr is already in the localToRemote!");
         require(remoteToLocal[_remote] == address(0), "ContractMap: addr is already in the remoteToLocal!");
+        require(_local != _remote, "ContractMap: addrs are equal!");
 
         localToRemote[_local] = _remote;
         remoteToLocal[_remote] = _local;
     }
 
-    function getRemote(address _local) public view override onlyOwner returns (address) {
+    function getRemote(address _local) public view override returns (address) {
         require(localToRemote[_local] != address(0), "ContractMap: addr is not in the localToRemote!");
         return localToRemote[_local];
     }
 
-    function getLocal(address _remote) public view override onlyOwner returns (address) {
+    function getLocal(address _remote) public view override returns (address) {
         require(remoteToLocal[_remote] != address(0), "ContractMap: addr is not in the remoteToLocal!");
         return remoteToLocal[_remote];
     }
