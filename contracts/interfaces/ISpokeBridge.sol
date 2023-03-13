@@ -22,7 +22,7 @@ interface ISpokeBridge {
 
     function sendProof(bool _isOutgoingBid, uint256 _bidId) external;
 
-    function receiveProof(uint256 _bidId) external;
+    function receiveProof(bytes memory _proof) external;
 
     function deposite() external payable;
 

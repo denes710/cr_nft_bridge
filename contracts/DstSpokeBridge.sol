@@ -4,6 +4,7 @@ pragma solidity >=0.4.22 <0.9.0;
 import {IContractMap} from "./interfaces/IContractMap.sol";
 import {ISpokeBridge} from "./interfaces/ISpokeBridge.sol";
 import {IDstSpokeBridge} from "./interfaces/IDstSpokeBridge.sol";
+import {IWrappedERC721} from "./interfaces/IWrappedERC721.sol";
 
 import {SpokeBridge} from "./SpokeBridge.sol";
 
@@ -48,13 +49,15 @@ abstract contract DstSpokeBridge is IDstSpokeBridge, SpokeBridge {
 
     function buyBid(uint256 _bidId) public override(ISpokeBridge, SpokeBridge) onlyActiveRelayer() {
         super.buyBid(_bidId);
-        // FIXME but burning is necessary
+        IWrappedERC721(outgoingBids[_bidId].erc721Contract).burn(outgoingBids[_bidId].tokenId);
     }
 
     function challengeMinting(uint256 _bidId) public override payable {
         require(msg.value == CHALLENGE_AMOUNT);
         require(incomingBids[_bidId].status == IncomingBidStatus.Relayed);
         require(incomingBids[_bidId].timestampOfRelayed + 4 hours > block.timestamp);
+
+        incomingBids[_bidId].status = IncomingBidStatus.Challenged;
 
         challengedIncomingBids[_bidId].challenger = _msgSender();
         challengedIncomingBids[_bidId].status = ChallengeStatus.Challenged;
@@ -63,11 +66,130 @@ abstract contract DstSpokeBridge is IDstSpokeBridge, SpokeBridge {
     }
 
     function sendProof(bool _isOutgoingBid, uint256 _bidId) public override {
-        // TODO
+        // FIXME some kind of time check
+        if (_isOutgoingBid) {
+            OutgoingBid memory bid = outgoingBids[_bidId];
+            bytes memory data = abi.encode(
+                _bidId,
+                bid.status,
+                bid.receiver,
+                bid.tokenId,
+                bid.erc721Contract,
+                bid.buyer
+            );
+
+            data = abi.encode(data, true);
+
+            _sendMessage(data);
+        } else {
+            IncomingBid memory bid = incomingBids[_bidId];
+            bytes memory data = abi.encode(
+                _bidId,
+                bid.status,
+                bid.receiver,
+                bid.tokenId,
+                bid.erc721Contract,
+                bid.relayer
+            );
+
+            data = abi.encode(data, false);
+
+            _sendMessage(data);
+        }
     }
 
-    function receiveProof(uint256 _bidId) public override {
-        // TODO
+    // FIXME only XY contract can call this function
+    function receiveProof(bytes memory _proof) public override {
+        (bytes memory bidBytes, bool isOutgoingBid) = abi.decode(_proof, (bytes, bool));
+        if (isOutgoingBid) {
+            // On the dest chain during minting(wrong relaying), revert minting
+            (
+                uint256 bidId,
+                OutgoingBidStatus status,
+                address receiver,
+                uint256 tokenId,
+                address localContract,
+                address relayer
+            ) = abi.decode(bidBytes, (uint256, OutgoingBidStatus, address, uint256, address, address));
+
+            // FIXME time window check
+            IncomingBid memory localChallengedBid = incomingBids[bidId];
+
+            if (status == OutgoingBidStatus.Bought &&
+                localChallengedBid.receiver == receiver &&
+                localChallengedBid.tokenId == tokenId &&
+                localChallengedBid.erc721Contract == localContract &&
+                localChallengedBid.relayer == relayer) {
+                // False challenging
+                localChallengedBid.status = IncomingBidStatus.Relayed;
+                relayers[relayer].status = RelayerStatus.Active;
+
+                // Dealing with the challenger
+                challengedIncomingBids[bidId].status = ChallengeStatus.None;
+
+                (bool isSent,) = challengedIncomingBids[bidId].challenger.call{value: CHALLENGE_AMOUNT/4}("");
+                require(isSent, "Failed to send Ether");
+            } else {
+                // Proved malicious bid(behavior)
+                localChallengedBid.status = IncomingBidStatus.Malicious;
+                relayers[relayer].status = RelayerStatus.Malicious;
+
+                // Burning the wrong minted token
+                IWrappedERC721(localChallengedBid.erc721Contract).burn(localChallengedBid.tokenId);
+
+                // Dealing with the challenger
+                challengedIncomingBids[bidId].status = ChallengeStatus.Proved;
+
+                (bool isSent,) = challengedIncomingBids[bidId].challenger.call{
+                    value: CHALLENGE_AMOUNT + STAKE_AMOUNT/3}("");
+
+                require(isSent, "Failed to send Ether");
+            }
+        } else {
+            // On the dest chain during burning(no relaying), revert burning
+            (
+                uint256 bidId,
+                IncomingBidStatus status,
+                address receiver,
+                uint256 tokenId,
+                address localContract,
+                address relayer
+            ) = abi.decode(bidBytes, (uint256, IncomingBidStatus, address, uint256, address, address));
+
+            OutgoingBid memory localChallengedBid = outgoingBids[bidId];
+
+            if (status == IncomingBidStatus.Relayed &&
+                localChallengedBid.receiver == receiver &&
+                localChallengedBid.tokenId == tokenId &&
+                localChallengedBid.erc721Contract == localContract &&
+                localChallengedBid.buyer == relayer) {
+                // False challenging
+                localChallengedBid.status = OutgoingBidStatus.Bought;
+                relayers[relayer].status = RelayerStatus.Active;
+
+                // Dealing with the challenger
+                challengedIncomingBids[bidId].status = ChallengeStatus.None;
+
+                (bool isSent,) = challengedIncomingBids[bidId].challenger.call{value: CHALLENGE_AMOUNT/4}("");
+                require(isSent, "Failed to send Ether");
+            } else {
+                // Proved malicious bid(behavior)
+                localChallengedBid.status = OutgoingBidStatus.Malicious;
+                relayers[relayer].status = RelayerStatus.Malicious;
+
+                // Burning the wrong minted token
+                IWrappedERC721(localChallengedBid.erc721Contract).mint(
+                    localChallengedBid.maker, localChallengedBid.tokenId);
+
+                // Dealing with the challenger
+                challengedIncomingBids[bidId].status = ChallengeStatus.Proved;
+
+                (bool isSent,) = challengedIncomingBids[bidId].challenger.call{
+                    value: CHALLENGE_AMOUNT + STAKE_AMOUNT/3}("");
+
+                require(isSent, "Failed to send Ether");
+            }
+        }
     }
 
     function minting(
@@ -76,21 +198,20 @@ abstract contract DstSpokeBridge is IDstSpokeBridge, SpokeBridge {
         uint256 _tokenId,
         address _erc721Contract
     )  public override onlyActiveRelayer {
-        // require(outgoingBids[_lockingBidId].status == OutgoingBidStatus.Bought);
         require(incomingBids[_bidId].status == IncomingBidStatus.None);
         require(ERC721(_erc721Contract).ownerOf(_tokenId) == address(0));
 
-        // outgoingBids[_lockingBidId].status = OutgoingBidStatus.Unlocked;
-
         incomingBids[_bidId] = IncomingBid({
             remoteId:_bidId,
-            lockingId:0, // FIXME 
+            outgoingId:0, // FIXME it is not relevant in Dst side
             status:IncomingBidStatus.Relayed,
             receiver:_to,
             tokenId:_tokenId,
-            localErc721Contract:_erc721Contract,
+            erc721Contract:_erc721Contract,
             timestampOfRelayed:block.timestamp,
             relayer:_msgSender()
         });
+
+        IWrappedERC721(_erc721Contract).mint(_to, _tokenId);
     }
 }

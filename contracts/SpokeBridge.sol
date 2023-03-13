@@ -51,11 +51,11 @@ abstract contract SpokeBridge is ISpokeBridge, Ownable {
 
     struct IncomingBid {
         uint256 remoteId;
-        uint256 lockingId;
+        uint256 outgoingId;
         IncomingBidStatus status;
         address receiver;
         uint256 tokenId;
-        address localErc721Contract;
+        address erc721Contract;
         uint256 timestampOfRelayed; // FIXME better name
         address relayer;
     }
