@@ -18,7 +18,7 @@ import {Counters} from "openzeppelin-solidity/contracts/utils/Counters.sol";
 abstract contract DstSpokeBridge is IDstSpokeBridge, SpokeBridge {
     using Counters for Counters.Counter;
 
-    constructor(address _contractMap, address _messageSender) SpokeBridge(_contractMap, _messageSender) {
+    constructor(address _contractMap, address _hub) SpokeBridge(_contractMap, _hub) {
     }
 
     function createBid(

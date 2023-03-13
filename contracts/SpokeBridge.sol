@@ -125,11 +125,11 @@ abstract contract SpokeBridge is ISpokeBridge, Ownable {
 
     address public contractMap;
 
-    address public messageSender;
+    address public immutable HUB;
 
-    constructor(address _contractMap, address _messageSender) {
+    constructor(address _contractMap, address _hub) {
         contractMap = _contractMap;
-        messageSender = _messageSender;
+        HUB = _hub;
         STAKE_AMOUNT = 20 ether;
         CHALLENGE_AMOUNT = 10 ether;
         TIME_LIMIT_OF_UNDEPOSIT = 2 days;
