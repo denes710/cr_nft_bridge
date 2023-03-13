@@ -89,8 +89,7 @@ abstract contract SrcSpokeBridge is ISrcSpokeBridge, SpokeBridge {
         }
     }
 
-    // FIXME only XY contract can
-    function receiveProof(bytes memory _proof) public override {
+    function receiveProof(bytes memory _proof) public override onlyHub {
         (bytes memory bidBytes, bool isOutgoingBid) = abi.decode(_proof, (bytes, bool));
         if (isOutgoingBid) {
             // On the source chain during unlocking(wrong relaying), revert the incoming messsage

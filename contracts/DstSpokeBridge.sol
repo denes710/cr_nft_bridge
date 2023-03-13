@@ -98,8 +98,7 @@ abstract contract DstSpokeBridge is IDstSpokeBridge, SpokeBridge {
         }
     }
 
-    // FIXME only XY contract can call this function
-    function receiveProof(bytes memory _proof) public override {
+    function receiveProof(bytes memory _proof) public override onlyHub {
         (bytes memory bidBytes, bool isOutgoingBid) = abi.decode(_proof, (bytes, bool));
         if (isOutgoingBid) {
             // On the dest chain during minting(wrong relaying), revert minting

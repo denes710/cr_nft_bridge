@@ -146,6 +146,11 @@ abstract contract SpokeBridge is ISpokeBridge, Ownable {
         _;
     }
 
+    modifier onlyHub() {
+        require(_getCrossMessageSender() == HUB, "SpokenBridge: caller is not the hub!");
+        _;
+    }
+
     function buyBid(uint256 _bidId) public virtual override onlyActiveRelayer() {
         require(outgoingBids[_bidId].status == OutgoingBidStatus.Created,
             "SpokenBridge: bid does not have Created state");
@@ -178,4 +183,6 @@ abstract contract SpokeBridge is ISpokeBridge, Ownable {
     }
 
     function _sendMessage(bytes memory _data) internal virtual;
+
+    function _getCrossMessageSender() internal virtual returns (address);
 }
