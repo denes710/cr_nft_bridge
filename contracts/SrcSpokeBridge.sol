@@ -29,12 +29,12 @@ contract SrcSpokeBridge is ISrcSpokeBridge, Ownable {
     /**
      * @notice FIXME
      */
-    mapping(uint256 => Bid) public incomingBids;
+    mapping(uint256 => IncomingBid) public incomingBids;
 
     /**
      * @notice FIXME
      */
-    mapping(uint256 => Bid) public outgoingBids;
+    mapping(uint256 => OutgoingBid) public outgoingBids;
 
     /**
      * @notice FIXME
@@ -82,21 +82,25 @@ contract SrcSpokeBridge is ISrcSpokeBridge, Ownable {
         _;
     }
 
-    function createBid(address _receiver, uint256 _tokenId, address _erc721Contract, uint32 _chainId) public override payable {
+    function createBid(
+        address _receiver,
+        uint256 _tokenId,
+        address _erc721Contract,
+        uint32 _chainId) public override payable {
         require(msg.value > 0, "SrcSpokenBridge: there is no fee for relayers!");
 
         ERC721(_erc721Contract).safeTransferFrom(msg.sender, address(this), _tokenId);
 
-        outgoingBids[id.current()] = Bid({
+        outgoingBids[id.current()] = OutgoingBid({
             id:id.current(),
-            status:BidStatus.Created,
+            status:OutgoingBidStatus.Created,
             fee:uint16(msg.value),
             maker:_msgSender(),
             receiver:_receiver,
             tokenId:_tokenId,
             erc721Contract:_erc721Contract,
             chainId:_chainId,
-            timeOfBuying:0,
+            timestampOfBought:0,
             buyer:address(0)
         });
 
@@ -104,21 +108,22 @@ contract SrcSpokeBridge is ISrcSpokeBridge, Ownable {
     }
 
     function buyBid(uint256 _bidId) public override onlyActiveRelayer() {
-        require(outgoingBids[_bidId].status == BidStatus.Created, "SrcSpokeBridge: bid does not have Created state");
-        outgoingBids[_bidId].status = BidStatus.Bought;
+        require(outgoingBids[_bidId].status == OutgoingBidStatus.Created,
+            "SrcSpokeBridge: bid does not have Created state");
+        outgoingBids[_bidId].status = OutgoingBidStatus.Bought;
         outgoingBids[_bidId].buyer = _msgSender();
-        outgoingBids[_bidId].timeOfBuying = block.timestamp;
+        outgoingBids[_bidId].timestampOfBought = block.timestamp;
     }
 
     function challengeUnlocking(uint256 _bidId) public override payable {
         require(msg.value == CHALLENGE_AMOUNT);
-        require(incomingBids[_bidId].status == BidStatus.Bought);
-        require(incomingBids[_bidId].timeOfBuying + 4 hours > block.timestamp);
+        require(incomingBids[_bidId].status == IncomingBidStatus.Relayed);
+        require(incomingBids[_bidId].timestampOfRelayed + 4 hours > block.timestamp);
 
         challengedIncomingBids[_bidId].challenger = _msgSender();
         challengedIncomingBids[_bidId].status = ChallengeStatus.Challenged;
 
-        relayers[incomingBids[_bidId].buyer].status = RelayerStatus.Challenged;
+        relayers[incomingBids[_bidId].relayer].status = RelayerStatus.Challenged;
     }
 
     function sendProof(uint256 _bidId) public override {
@@ -157,17 +162,24 @@ contract SrcSpokeBridge is ISrcSpokeBridge, Ownable {
         uint256 _bidId,
         address _to,
         uint256 _tokenId,
-        address _originErc721Contract
+        address _remoteErc721Contract
     )  public override onlyActiveRelayer {
-        require(outgoingBids[_lockingBidId].status == BidStatus.Bought);
-        require(incomingBids[_bidId].status == BidStatus.None);
-        require(ERC721(_originErc721Contract).ownerOf(_tokenId) == address(this));
+        require(outgoingBids[_lockingBidId].status == OutgoingBidStatus.Bought);
+        require(incomingBids[_bidId].status == IncomingBidStatus.None);
+        address localErc721Contract = IContractMap(contractMap).getLocal(_remoteErc721Contract);
+        require(ERC721(localErc721Contract).ownerOf(_tokenId) == address(this));
 
-        // FIXME incoming and outgoing bids are necessary
-        incomingBids[_bidId].status = BidStatus.Bought;
-        // incomingBids[_bidId].lockingBidId = _lockingBidId;
-        incomingBids[_bidId].receiver = _to;
-        incomingBids[_bidId].erc721Contract = _originErc721Contract;
-        incomingBids[_bidId].timeOfBuying = block.timestamp;
+        outgoingBids[_lockingBidId].status = OutgoingBidStatus.Unlocked;
+
+        incomingBids[_bidId] = IncomingBid({
+            remoteId:_bidId,
+            lockingId:_lockingBidId,
+            status:IncomingBidStatus.Relayed,
+            receiver:_to,
+            tokenId:_tokenId,
+            localErc721Contract:localErc721Contract,
+            timestampOfRelayed:block.timestamp,
+            relayer:_msgSender()
+        });
     }
 }

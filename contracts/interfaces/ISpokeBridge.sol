@@ -11,25 +11,48 @@ interface ISpokeBridge {
      * @dev Status of a bid:
      *      0 - FIXME
      */
-    enum BidStatus {
+    enum OutgoingBidStatus {
         None,
         Created,
         Bought,
         Challenged,
-        Done
+        Malicious,
+        Unlocked
     }
 
-    struct Bid {
+    /**
+     * @dev Status of a bid:
+     *      0 - FIXME
+     */
+    enum IncomingBidStatus {
+        None,
+        Relayed,
+        Challenged,
+        Malicious
+    }
+
+    struct OutgoingBid {
         uint256 id;
-        BidStatus status;
+        OutgoingBidStatus status;
         uint16 fee; //FIXME it is questionable
         address maker;
         address receiver;
         uint256 tokenId;
         address erc721Contract;
         uint32 chainId;
-        uint256 timeOfBuying; // FIXME better name
+        uint256 timestampOfBought;
         address buyer;
+    }
+
+    struct IncomingBid {
+        uint256 remoteId;
+        uint256 lockingId;
+        IncomingBidStatus status;
+        address receiver;
+        uint256 tokenId;
+        address localErc721Contract;
+        uint256 timestampOfRelayed; // FIXME better name
+        address relayer;
     }
 
     /**
