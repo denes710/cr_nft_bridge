@@ -6,74 +6,6 @@ pragma solidity >=0.4.22 <0.9.0;
  * @notice This interface will send and receive messages through.
  */
 interface ISpokeBridge {
-
-    /**
-     * @dev Status of a bid:
-     *      0 - FIXME
-     */
-    enum OutgoingBidStatus {
-        None,
-        Created,
-        Bought,
-        Challenged,
-        Malicious,
-        Unlocked
-    }
-
-    /**
-     * @dev Status of a bid:
-     *      0 - FIXME
-     */
-    enum IncomingBidStatus {
-        None,
-        Relayed,
-        Challenged,
-        Malicious
-    }
-
-    struct OutgoingBid {
-        uint256 id;
-        OutgoingBidStatus status;
-        uint16 fee; //FIXME it is questionable
-        address maker;
-        address receiver;
-        uint256 tokenId;
-        address erc721Contract;
-        uint32 chainId;
-        uint256 timestampOfBought;
-        address buyer;
-    }
-
-    struct IncomingBid {
-        uint256 remoteId;
-        uint256 lockingId;
-        IncomingBidStatus status;
-        address receiver;
-        uint256 tokenId;
-        address localErc721Contract;
-        uint256 timestampOfRelayed; // FIXME better name
-        address relayer;
-    }
-
-    /**
-     * @dev Status of a bid:
-     *      0 - FIXME
-     */
-    enum RelayerStatus {
-        None,
-        Active,
-        Undeposited,
-        Challenged,
-        Malicious
-    }
-
-    struct Relayer {
-        RelayerStatus status;
-        uint dateOfUndeposited;
-        uint256 stakedAmount; // TODO make linear relationship beetween the number of interactions and staked amount
-        // TODO use versioning
-    }
-
     // TODO define the parameters of the BID
     event BidCreated();
 
@@ -86,11 +18,9 @@ interface ISpokeBridge {
 
     event NFTUnwrapped(address contractAddress, uint256 bidId, uint256 id, address owner);
 
-    function createBid(address _receiver, uint256 _tokenId, address _erc721Contract, uint32 _chainId) external payable;
-
     function buyBid(uint256 _bidId) external;
 
-    function sendProof(uint256 _bidId) external;
+    function sendProof(bool _isOutgoingBid, uint256 _bidId) external;
 
     function receiveProof(uint256 _bidId) external;
 

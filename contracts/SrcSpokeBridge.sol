@@ -4,7 +4,8 @@ pragma solidity >=0.4.22 <0.9.0;
 import {IContractMap} from "./interfaces/IContractMap.sol";
 import {ISrcSpokeBridge} from "./interfaces/ISrcSpokeBridge.sol";
 
-import {Ownable} from "openzeppelin-solidity/contracts/access/Ownable.sol";
+import {SpokeBridge} from "./SpokeBridge.sol";
+
 import {ERC721} from "openzeppelin-solidity/contracts/token/ERC721/ERC721.sol";
 import {Counters} from "openzeppelin-solidity/contracts/utils/Counters.sol";
 
@@ -12,81 +13,16 @@ import {Counters} from "openzeppelin-solidity/contracts/utils/Counters.sol";
 /**
  * @notice
  */
-contract SrcSpokeBridge is ISrcSpokeBridge, Ownable {
+abstract contract SrcSpokeBridge is ISrcSpokeBridge, SpokeBridge {
     using Counters for Counters.Counter;
 
-    enum ChallengeStatus {
-        None,
-        Challenged,
-        Proved
-    }
-
-    struct Challenge {
-        address challenger;
-        ChallengeStatus status;
-    }
-
-    /**
-     * @notice FIXME
-     */
-    mapping(uint256 => IncomingBid) public incomingBids;
-
-    /**
-     * @notice FIXME
-     */
-    mapping(uint256 => OutgoingBid) public outgoingBids;
-
-    /**
-     * @notice FIXME
-     */
-    mapping(address => Relayer) public relayers;
-
-    /**
-     * @notice FIXME
-     */
-    mapping(uint256 => Challenge) public challengedIncomingBids;
-
-    /**
-     * @notice FIXME
-     */
-    mapping(uint256 => Challenge) public challengedOutgoingBids;
-
-    uint256 public immutable STAKE_AMOUNT;
-
-    uint256 public immutable CHALLENGE_AMOUNT;
-
-    uint256 public immutable TIME_LIMIT_OF_UNDEPOSIT;
-
-    Counters.Counter public id;
-
-    address public contractMap;
-
-    address public messageSender;
-
-    constructor(address _contractMap, address _messageSender) {
-        contractMap = _contractMap;
-        messageSender = _messageSender;
-        STAKE_AMOUNT = 20 ether;
-        CHALLENGE_AMOUNT = 10 ether;
-        TIME_LIMIT_OF_UNDEPOSIT = 2 days;
-    }
-
-    modifier onlyActiveRelayer() {
-        require(RelayerStatus.Active == relayers[_msgSender()].status, "SrcSpokenBridge: caller is not a relayer!");
-        _;
-    }
-
-    modifier onlyUndepositedRelayer() {
-        require(RelayerStatus.Undeposited == relayers[_msgSender()].status,
-            "SrcSpokenBridge: caller is not in undeposited state!");
-        _;
+    constructor(address _contractMap, address _messageSender) SpokeBridge(_contractMap, _messageSender) {
     }
 
     function createBid(
         address _receiver,
         uint256 _tokenId,
-        address _erc721Contract,
-        uint32 _chainId) public override payable {
+        address _erc721Contract) public override payable {
         require(msg.value > 0, "SrcSpokenBridge: there is no fee for relayers!");
 
         ERC721(_erc721Contract).safeTransferFrom(msg.sender, address(this), _tokenId);
@@ -99,20 +35,11 @@ contract SrcSpokeBridge is ISrcSpokeBridge, Ownable {
             receiver:_receiver,
             tokenId:_tokenId,
             erc721Contract:_erc721Contract,
-            chainId:_chainId,
             timestampOfBought:0,
             buyer:address(0)
         });
 
         id.increment();
-    }
-
-    function buyBid(uint256 _bidId) public override onlyActiveRelayer() {
-        require(outgoingBids[_bidId].status == OutgoingBidStatus.Created,
-            "SrcSpokeBridge: bid does not have Created state");
-        outgoingBids[_bidId].status = OutgoingBidStatus.Bought;
-        outgoingBids[_bidId].buyer = _msgSender();
-        outgoingBids[_bidId].timestampOfBought = block.timestamp;
     }
 
     function challengeUnlocking(uint256 _bidId) public override payable {
@@ -126,35 +53,37 @@ contract SrcSpokeBridge is ISrcSpokeBridge, Ownable {
         relayers[incomingBids[_bidId].relayer].status = RelayerStatus.Challenged;
     }
 
-    function sendProof(uint256 _bidId) public override {
-        // TODO
+    function sendProof(bool _isOutgoingBid, uint256 _bidId) public override {
+        if (_isOutgoingBid) {
+            OutgoingBid memory bid = outgoingBids[_bidId];
+            bytes memory data = abi.encode(
+                _isOutgoingBid,
+                _bidId,
+                bid.status,
+                bid.receiver,
+                bid.tokenId,
+                bid.erc721Contract,
+                bid.buyer
+            );
+            _sendMessage(data);
+        } else {
+            IncomingBid memory bid = incomingBids[_bidId];
+            bytes memory data = abi.encode(
+                _isOutgoingBid,
+                _bidId,
+                bid.status,
+                bid.receiver,
+                bid.tokenId,
+                bid.localErc721Contract,
+                bid.relayer,
+                bid.lockingId
+            );
+            _sendMessage(data);
+        }
     }
 
     function receiveProof(uint256 _bidId) public override {
         // TODO
-    }
-
-    function deposite() public override payable {
-        require(RelayerStatus.None == relayers[_msgSender()].status, "SrcSpokenBridge: caller cannot be a relayer!");
-        require(msg.value == STAKE_AMOUNT);
-
-        relayers[_msgSender()].status = RelayerStatus.Active;
-        relayers[_msgSender()].stakedAmount = msg.value;
-    }
-
-    function undeposite() public override onlyActiveRelayer {
-        relayers[_msgSender()].status = RelayerStatus.Undeposited;
-        relayers[_msgSender()].dateOfUndeposited = block.timestamp;
-    }
-
-    function claimDeposite() public override onlyUndepositedRelayer {
-        require(block.timestamp > relayers[_msgSender()].dateOfUndeposited + TIME_LIMIT_OF_UNDEPOSIT,
-            "SrcSpokenBridge: 2 days is not expired from the undepositing!");
-
-        (bool isSent,) = _msgSender().call{value: STAKE_AMOUNT}("");
-        require(isSent, "Failed to send Ether");
-
-        relayers[_msgSender()].status = RelayerStatus.None;
     }
 
     function unlocking(

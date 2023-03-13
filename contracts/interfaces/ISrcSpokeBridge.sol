@@ -8,6 +8,8 @@ import {ISpokeBridge} from "./ISpokeBridge.sol";
  * @notice
  */
 interface ISrcSpokeBridge is ISpokeBridge {
+    function createBid(address _receiver, uint256 _tokenId, address _erc721Contract) external payable;
+
     function challengeUnlocking(uint256 _bidId) external payable;
 
     function unlocking(
