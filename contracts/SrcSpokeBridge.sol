@@ -16,9 +16,9 @@ contract SrcSpokeBridge is ISrcSpokeBridge, Ownable {
     using Counters for Counters.Counter;
 
     enum ChallengeStatus {
-        NONE,
-        CHALLENGED,
-        PROVED
+        None,
+        Challenged,
+        Proved
     }
 
     struct Challenge {
@@ -44,15 +44,16 @@ contract SrcSpokeBridge is ISrcSpokeBridge, Ownable {
     /**
      * @notice FIXME
      */
-    mapping(uint256 => Bid) public challengedIncomingBids;
+    mapping(uint256 => Challenge) public challengedIncomingBids;
 
     /**
      * @notice FIXME
      */
-    mapping(uint256 => Bid) public challengedOutgoingBids;
+    mapping(uint256 => Challenge) public challengedOutgoingBids;
 
-    // TODO another for challenging
     uint256 public immutable STAKE_AMOUNT;
+
+    uint256 public immutable CHALLENGE_AMOUNT;
 
     uint256 public immutable TIME_LIMIT_OF_UNDEPOSIT;
 
@@ -66,6 +67,7 @@ contract SrcSpokeBridge is ISrcSpokeBridge, Ownable {
         contractMap = _contractMap;
         messageSender = _messageSender;
         STAKE_AMOUNT = 20 ether;
+        CHALLENGE_AMOUNT = 10 ether;
         TIME_LIMIT_OF_UNDEPOSIT = 2 days;
     }
 
@@ -109,7 +111,14 @@ contract SrcSpokeBridge is ISrcSpokeBridge, Ownable {
     }
 
     function challengeUnlocking(uint256 _bidId) public override payable {
-        // TODO
+        require(msg.value == CHALLENGE_AMOUNT);
+        require(incomingBids[_bidId].status == BidStatus.Bought);
+        require(incomingBids[_bidId].timeOfBuying + 4 hours > block.timestamp);
+
+        challengedIncomingBids[_bidId].challenger = _msgSender();
+        challengedIncomingBids[_bidId].status = ChallengeStatus.Challenged;
+
+        relayers[incomingBids[_bidId].buyer].status = RelayerStatus.Challenged;
     }
 
     function sendProof(uint256 _bidId) public override {
@@ -143,7 +152,22 @@ contract SrcSpokeBridge is ISrcSpokeBridge, Ownable {
         relayers[_msgSender()].status = RelayerStatus.None;
     }
 
-    function unlocking(uint256 _lockingBidId, uint256 _bidId, address _to, address erc721Contract) public override {
-        // TODO
+    function unlocking(
+        uint256 _lockingBidId,
+        uint256 _bidId,
+        address _to,
+        uint256 _tokenId,
+        address _originErc721Contract
+    )  public override onlyActiveRelayer {
+        require(outgoingBids[_lockingBidId].status == BidStatus.Bought);
+        require(incomingBids[_bidId].status == BidStatus.None);
+        require(ERC721(_originErc721Contract).ownerOf(_tokenId) == address(this));
+
+        // FIXME incoming and outgoing bids are necessary
+        incomingBids[_bidId].status = BidStatus.Bought;
+        // incomingBids[_bidId].lockingBidId = _lockingBidId;
+        incomingBids[_bidId].receiver = _to;
+        incomingBids[_bidId].erc721Contract = _originErc721Contract;
+        incomingBids[_bidId].timeOfBuying = block.timestamp;
     }
 }
